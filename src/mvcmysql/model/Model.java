@@ -23,6 +23,7 @@ public class Model {
     
     private static Connection connexio=null;  
     private static ResultSet resultSet = null;
+    private static PreparedStatement sentenciaActTaula = null;
         
     public Model() {
         Properties props = new Properties();
@@ -42,6 +43,7 @@ public class Model {
     }
 
     public void finalize() throws Throwable {
+        if(sentenciaActTaula!=null) sentenciaActTaula.close();
         if(resultSet!=null) resultSet.close();
         if(connexio!=null) connexio.close();
         System.out.println("Tancant la connexió a la BD...");
@@ -101,11 +103,13 @@ public class Model {
     }
     
     public ArrayList<TaulaActors> llistarActors(){
-            
         ArrayList llista=new ArrayList();
         String sql = "SELECT actor_id, first_name, last_name FROM actor ORDER BY 1;";
-        try(PreparedStatement sentenciaPr=connexio.prepareStatement(sql)) {
-            this.resultSet=sentenciaPr.executeQuery();
+        
+        try{
+            //La instàncio aquí i no en un try_with_resources per què per poder actualitzar la taula que rep les dades la sentència ha d'estar oberta 
+            sentenciaActTaula=connexio.prepareStatement(sql,ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
+            this.resultSet=sentenciaActTaula.executeQuery();
             
             if(this.resultSet!=null){
             
@@ -122,6 +126,10 @@ public class Model {
             System.err.println("Error al llistar els actors!!");
         }  
         return llista;    
+    }
+
+    public static ResultSet getResultSet() {
+        return resultSet;
     }
     
     

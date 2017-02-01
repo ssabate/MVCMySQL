@@ -9,6 +9,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -18,6 +20,8 @@ import java.beans.PropertyDescriptor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -25,8 +29,11 @@ import java.util.Vector;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JOptionPane;
+import javax.swing.event.TableModelEvent;
+import javax.swing.event.TableModelListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableColumn;
+import javax.swing.table.TableModel;
 import mvcmysql.model.Model;
 import mvcmysql.model.TaulaActors;
 import mvcmysql.view.VistaActors;
@@ -67,7 +74,7 @@ public class Controlador {
 
         Vector columnNames = new Vector();
         Vector data = new Vector();
-        DefaultTableModel model;
+        ModelCanvisBD model;
 
         //Anotem el nº de camps de la classe
         Field[] camps = classe.getDeclaredFields();
@@ -125,7 +132,8 @@ public class Controlador {
             }
         }
 
-        model = new DefaultTableModel(data, columnNames);
+        //Utilitzem el model que permet actualitzar la BD des de la taula
+        model = new ModelCanvisBD(data, columnNames,Model.getResultSet(),0);
         vista.getjTable2().setModel(model);
 
         TableColumn column;
@@ -322,6 +330,31 @@ public class Controlador {
         
         vista.getjTextField1().addFocusListener(focusAdapter);
         vista.getjTextField2().addFocusListener(focusAdapter);
+
+        KeyAdapter keyAdapter=new KeyAdapter(){
+            @Override
+            public void keyTyped(KeyEvent e) {
+                super.keyTyped(e); //To change body of generated methods, choose Tools | Templates.
+                if(e.getKeyChar()=='\n'){
+                
+                    try {
+                        filasel = vista.getjTable2().getSelectedRow();
+                        if (filasel != -1) {
+                            //if(jTable2.getValueAt(filasel, 0) instanceof String ) 
+                            id = Integer.parseInt(vista.getjTable2().getValueAt(filasel, 0).toString());
+                            //else id=(int)jTable2.getValueAt(filasel, 0);
+                            nom = (String) vista.getjTable2().getValueAt(filasel, 1);
+                            vista.getjTextField1().setText(nom);
+                            cognom = (String) vista.getjTable2().getValueAt(filasel, 2);
+                            vista.getjTextField2().setText(cognom);
+                        }else borrarCamps();
+                    } catch (NumberFormatException ex) {
+                    }
+                }
+            }        
+        };
+        
+        vista.getjTable2().addKeyListener(keyAdapter);
         
         WindowAdapter windowAdapter =new java.awt.event.WindowAdapter() {
             @Override
@@ -339,4 +372,47 @@ public class Controlador {
         vista.addWindowListener(windowAdapter);
     }
 
+}
+
+//Classse filla de DefaultTableModel que conté un Listener per automàticament actualitzar a la BD els canvis fets a una jTable
+class ModelCanvisBD extends DefaultTableModel {
+    
+    private ResultSet resultSet = null;
+    private int columnaID;
+
+    //El paràmetre ResultSet rs ha de ser el que hem usat per extreure les dades mostrades a la jTable, ha de ser del tipus actualitzable (CONCUR_UPDATABLE) 
+    //sinó provoca una excepció i ha d'estar obert, tant ell com l'statement que el genera
+    //Exemple:
+    //statement = JFramePrincipal.con.createStatement(ResultSet.TYPE_SCROLL_SENSITIVE, ResultSet.CONCUR_UPDATABLE);
+    //resultSet = statement.executeQuery(sql);    
+
+    //El paràmetre colID indica quina columna del DefaultTableModel conté l'identificador de la fila de la taula
+    public ModelCanvisBD(Vector data, Vector columnNames, ResultSet rs, int colID) {
+        super(data, columnNames);
+        resultSet = rs;
+        columnaID = colID;
+        this.addTableModelListener(new TableModelListener() {
+            @Override
+            public void tableChanged(TableModelEvent e) {
+                int row = e.getFirstRow();
+                int column = e.getColumn();
+                TableModel model = (TableModel) e.getSource();
+                Object data = model.getValueAt(row, column);
+
+                try {
+                    int id = (Integer) model.getValueAt(row, columnaID);
+                    resultSet.beforeFirst();
+                    while (resultSet.next() && resultSet.getInt(columnaID+1) != id);
+                    resultSet.updateObject(column + 1, data);
+                    resultSet.updateRow();
+                } catch (SQLException ex) {
+                    //Logger.getLogger(JFramePelis.class.getName()).log(Level.SEVERE, null, ex);
+                } catch (ClassCastException ex) {
+                    JOptionPane.showMessageDialog(null, "Canvi de dada incorrecte!!", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }
+        );
+
+    }
 }
